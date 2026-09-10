@@ -9,6 +9,7 @@ const hex2a = require('./utils/hex2a')
 const { aesEncrypt, aesDecryptHex } = require('./utils/crypto')
 const readFirmware = require('./utils/firmware')
 const { getErrorMsg } = require('./utils')
+const { detectLogFormat } = require('./log-format')
 const {
   MINOR_ERROR_CODES_M56S_M30_SET,
   MINOR_ERROR_CODES_M53_SET,
@@ -305,8 +306,9 @@ class WhatsminerMiner extends BaseMiner {
     const downloadCmd = this.protocolHandler.transformCommand('download_logs')
 
     if (this.apiVersion === API_VERSIONS.V3) {
-      const { token, key } = this.protocolHandler.generateTokenInfo(downloadCmd)
-      const ts = Math.floor(Date.now() / 1000)
+      // The token hashes the ts it was generated with — reuse that ts in the
+      // payload, a fresh Date.now() can land on the next second and invalidate it
+      const { token, key, ts } = this.protocolHandler.generateTokenInfo(downloadCmd)
       const cmd = JSON.stringify({ cmd: downloadCmd, ts, token, account: this.opts.username || V3_DEFAULT_ACCOUNT })
       const data = aesEncrypt(cmd, key)
       return { encCmd: JSON.stringify({ enc: 1, data }), decryptionKey: key }
@@ -462,10 +464,19 @@ class WhatsminerMiner extends BaseMiner {
       if (!logCoreManager) throw new Error('ERR_LOG_CORE_MANAGER_NOT_READY')
       const meta = await logCoreManager.serveLog(logBuffer, this.opts.id)
 
-      // Also write a local debug file (metadata only, not raw bytes)
-      this._saveResponseFile(meta)
+      // The firmware decides the payload format (plain text or a gzipped tar of the
+      // log directory), so it is detected once here and declared in the result
+      const { extension, contentType } = detectLogFormat(logBuffer)
+      const data = {
+        ...meta,
+        fileName: `miner-log-${this.opts.id}-${Date.now()}.${extension}`,
+        contentType
+      }
 
-      return { success: true, data: meta }
+      // Also write a local debug file (metadata only, not raw bytes)
+      this._saveResponseFile(data)
+
+      return { success: true, data }
     } catch (e) {
       this.debugError('downloadLogs error', e)
       return { success: false, error_msg: e.message }
@@ -1142,7 +1153,7 @@ class WhatsminerMiner extends BaseMiner {
       miner_info: this.getMinerInfo.bind(this),
       version: this.getVersion.bind(this),
       miner_status: this.getMinerStatus.bind(this)
-    }, 3)
+    }, this.conf.snapConcurrency || 3)
 
     this._handleErrorUpdates(data.errors)
 

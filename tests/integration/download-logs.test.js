@@ -12,7 +12,7 @@ const LOG_SUFFIX = '--- End of Log ---\n'
 let nextPort = 14060
 
 // Boots a mock miner (with optional download-logs fault injection) and a Miner instance
-async function setup (t, { dlFault = null, dlLogSizeBytes = null, minerConf = {} } = {}) {
+async function setup (t, { dlFault = null, dlLogSizeBytes = null, dlPayloadFormat = null, dlEncPadding = null, minerConf = {}, getLogCoreManager } = {}) {
   const port = nextPort++
   const mock = srv.createServer({
     host: HOST,
@@ -22,7 +22,9 @@ async function setup (t, { dlFault = null, dlLogSizeBytes = null, minerConf = {}
     password: PASSWORD,
     apiVersion: 'v2',
     dlFault,
-    dlLogSizeBytes
+    dlLogSizeBytes,
+    dlPayloadFormat,
+    dlEncPadding
   })
 
   const miner = new Miner({
@@ -36,7 +38,8 @@ async function setup (t, { dlFault = null, dlLogSizeBytes = null, minerConf = {}
     password: PASSWORD,
     id: 'test-dl',
     apiVersion: '2.0.5',
-    conf: minerConf
+    conf: minerConf,
+    getLogCoreManager
   })
   await miner.init()
 
@@ -131,10 +134,60 @@ test('downloadLogs - stalled binary phase times out with ERR_DOWNLOAD_LOGS_TIMEO
   )
 })
 
+test('downloadLogs - zero-padded response header (2026 REL2 firmware) still downloads', async (t) => {
+  const { miner } = await setup(t, { dlEncPadding: 'zero' })
+  const result = await miner._requestDownloadLogs()
+  assertFullLog(t, result)
+})
+
 test('downloadLogs - repeated downloads on the same miner are deterministic', async (t) => {
   const { miner } = await setup(t)
   for (let i = 0; i < 10; i++) {
     const result = await miner._requestDownloadLogs()
     assertFullLog(t, result)
   }
+})
+
+function fakeLogCoreManager () {
+  const served = []
+  return {
+    served,
+    serveLog: async (logBuffer, minerId) => {
+      served.push(logBuffer)
+      return {
+        coreKey: 'a'.repeat(64),
+        discoveryKey: 'b'.repeat(64),
+        byteLength: logBuffer.length,
+        minerId,
+        expiresAt: Date.now() + 60000
+      }
+    }
+  }
+}
+
+test('downloadLogs - action result declares .log/text for a plain-text payload', async (t) => {
+  const manager = fakeLogCoreManager()
+  const { miner } = await setup(t, { getLogCoreManager: () => manager })
+  miner._saveResponseFile = () => {}
+
+  const res = await miner.downloadLogs()
+  t.is(res.success, true)
+  t.ok(/^miner-log-test-dl-\d+\.log$/.test(res.data.fileName), `fileName should be miner-log-<id>-<ts>.log, got ${res.data.fileName}`)
+  t.is(res.data.contentType, 'text/plain; charset=utf-8')
+  t.is(res.data.byteLength, manager.served[0].length)
+  t.ok(manager.served[0].toString().endsWith(LOG_SUFFIX), 'served payload should be untouched')
+})
+
+test('downloadLogs - action result declares .tar.gz/gzip for an archive payload', async (t) => {
+  const manager = fakeLogCoreManager()
+  const { miner } = await setup(t, { dlPayloadFormat: 'tar.gz', getLogCoreManager: () => manager })
+  miner._saveResponseFile = () => {}
+
+  const res = await miner.downloadLogs()
+  t.is(res.success, true)
+  t.ok(/^miner-log-test-dl-\d+\.tar\.gz$/.test(res.data.fileName), `fileName should be miner-log-<id>-<ts>.tar.gz, got ${res.data.fileName}`)
+  t.is(res.data.contentType, 'application/gzip')
+  t.is(manager.served[0][0], 0x1f, 'served payload should still be the raw gzip bytes')
+  t.is(manager.served[0][1], 0x8b, 'served payload should still be the raw gzip bytes')
+  t.is(res.data.byteLength, manager.served[0].length)
 })
