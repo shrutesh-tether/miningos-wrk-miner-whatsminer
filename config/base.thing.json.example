@@ -1504,24 +1504,6 @@
       }
     },
     "miner-wm-m63spp": {
-      "pcb_temp_warning": {
-        "description": "PCB temperature too high",
-        "severity": "critical",
-        "params": {
-          "lowTemp": 90,
-          "normalTemp": 90,
-          "highTemp": 90
-        }
-      },
-      "chip_temp_warning": {
-        "description": "Chip temperature warning",
-        "severity": "critical",
-        "params": {
-          "lowTemp": 100,
-          "normalTemp": 100,
-          "highTemp": 100
-        }
-      },
       "wrong_miner_pool": {
         "description": "Some Miner pools do not correspond to correct pool IP.",
         "severity": "critical"
@@ -1537,27 +1519,6 @@
       "ip_worker_name": {
         "description": "Worker name corresponds to IP instead of MiningOS ID.",
         "severity": "medium"
-      },
-      "low_power_warning": {
-        "description": "Miner power too low",
-        "severity": "critical",
-        "params": {
-          "lowPower": 80
-        }
-      },
-      "low_hashrate_warning": {
-        "description": "Miner hashrate too low",
-        "severity": "critical",
-        "params": {
-          "lowHash": 80
-        }
-      },
-      "high_efficiency_warning": {
-        "description": "Miner efficiency is too high",
-        "severity": "critical",
-        "params": {
-          "highEfficiency": 125
-        }
       },
       "power_probing_error": {
         "description": "No power found, upgrade firmware or replace the PSU",
