@@ -1941,7 +1941,7 @@
         "severity": "warning"
       },
       "custom.chip_temp.critical": {
-        "description": "Chip temperature warning",
+        "description": "Chip temperature critical",
         "severity": "critical"
       },
       "custom.low_power.warning": {
