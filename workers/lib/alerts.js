@@ -15,6 +15,10 @@ const targetPowerW = (snap) => {
   return nominalEff * (targetMhs / 1e6)
 }
 
+// Shared with custom.low_hashrate.* (defined in the base template), so the
+// warm-up clock is tracked once, not per vendor.
+const timeSinceMiningMs = libAlerts.timeSinceMiningMs
+
 const isMining = (snap) => {
   return libUtils.isValidSnap(snap) && !libUtils.isOffline(snap) && snap.stats.status === STATUS.MINING
 }
@@ -49,8 +53,9 @@ libAlerts.specs.miner = {
   },
   low_power_warning: {
     valid: (ctx, snap) => {
+      const miningMs = timeSinceMiningMs(ctx, snap)
       return isMining(snap) && ctx.conf.low_power_warning &&
-        snap.stats.uptime_ms > MIN_10_MS && targetPowerW(snap) > 0
+        miningMs > MIN_10_MS && targetPowerW(snap) > 0
     },
     probe: (ctx, snap) => {
       const threshold = targetPowerW(snap) * (ctx.conf.low_power_warning.lowPower / 100)
@@ -59,8 +64,9 @@ libAlerts.specs.miner = {
   },
   low_hashrate_warning: {
     valid: (ctx, snap) => {
+      const miningMs = timeSinceMiningMs(ctx, snap)
       return isMining(snap) && ctx.conf.low_hashrate_warning &&
-        snap.stats.uptime_ms > MIN_30_MS && snap.stats.hashrate_mhs?.target > 0
+        miningMs > MIN_30_MS && snap.stats.hashrate_mhs?.target > 0
     },
     probe: (ctx, snap) => {
       const threshold = snap.stats.hashrate_mhs.target * (ctx.conf.low_hashrate_warning.lowHash / 100)
@@ -69,8 +75,9 @@ libAlerts.specs.miner = {
   },
   high_efficiency_warning: {
     valid: (ctx, snap) => {
+      const miningMs = timeSinceMiningMs(ctx, snap)
       return isMining(snap) && ctx.conf.high_efficiency_warning &&
-        snap.stats.uptime_ms > MIN_30_MS && snap.stats.nominal_efficiency_w_ths > 0
+        miningMs > MIN_30_MS && snap.stats.nominal_efficiency_w_ths > 0
     },
     probe: (ctx, snap) => {
       const threshold = snap.stats.nominal_efficiency_w_ths * (ctx.conf.high_efficiency_warning.highEfficiency / 100)
@@ -141,9 +148,10 @@ libAlerts.specs.miner = {
     valid: (ctx, snap) => {
       const configuredParams = ctx.configuredParams['custom.low_power.warning']
       const enabled = configuredParams?.enabled
+      const miningMs = timeSinceMiningMs(ctx, snap)
 
       return enabled && isMining(snap) &&
-        snap.stats.uptime_ms > MIN_10_MS && targetPowerW(snap) > 0
+        miningMs > MIN_10_MS && targetPowerW(snap) > 0
     },
     probe: (ctx, snap) => {
       const configuredParams = ctx.configuredParams['custom.low_power.warning']
@@ -155,9 +163,10 @@ libAlerts.specs.miner = {
     valid: (ctx, snap) => {
       const configuredParams = ctx.configuredParams['custom.low_power.critical']
       const enabled = configuredParams?.enabled
+      const miningMs = timeSinceMiningMs(ctx, snap)
 
       return enabled && isMining(snap) &&
-        snap.stats.uptime_ms > MIN_10_MS && targetPowerW(snap) > 0
+        miningMs > MIN_10_MS && targetPowerW(snap) > 0
     },
     probe: (ctx, snap) => {
       const configuredParams = ctx.configuredParams['custom.low_power.critical']
@@ -169,9 +178,10 @@ libAlerts.specs.miner = {
     valid: (ctx, snap) => {
       const configuredParams = ctx.configuredParams['custom.high_efficiency.warning']
       const enabled = configuredParams?.enabled
+      const miningMs = timeSinceMiningMs(ctx, snap)
 
       return enabled && isMining(snap) &&
-        snap.stats.uptime_ms > MIN_30_MS && snap.stats.nominal_efficiency_w_ths > 0
+        miningMs > MIN_30_MS && snap.stats.nominal_efficiency_w_ths > 0
     },
     probe: (ctx, snap) => {
       const configuredParams = ctx.configuredParams['custom.high_efficiency.warning']
@@ -183,9 +193,10 @@ libAlerts.specs.miner = {
     valid: (ctx, snap) => {
       const configuredParams = ctx.configuredParams['custom.high_efficiency.critical']
       const enabled = configuredParams?.enabled
+      const miningMs = timeSinceMiningMs(ctx, snap)
 
       return enabled && isMining(snap) &&
-        snap.stats.uptime_ms > MIN_30_MS && snap.stats.nominal_efficiency_w_ths > 0
+        miningMs > MIN_30_MS && snap.stats.nominal_efficiency_w_ths > 0
     },
     probe: (ctx, snap) => {
       const configuredParams = ctx.configuredParams['custom.high_efficiency.critical']

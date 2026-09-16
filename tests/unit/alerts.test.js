@@ -300,31 +300,42 @@ test('alerts - low_power_warning valid and probe', (t) => {
   t.ok(typeof spec.probe === 'function', 'should have probe function')
 
   withMiningMocks(() => {
-    const ctx = { conf: { low_power_warning: { lowPower: 80 } } }
+    const ctx = { id: 'low-power-warning-test', conf: { low_power_warning: { lowPower: 80 } } }
+    const t0 = Date.now()
     // nominal 20 W/THs * 100 THs (100,000,000 MHS) target => 2000 W target, threshold 1600 W
-    const base = {
-      stats: {
-        status: 'mining',
-        uptime_ms: MIN_10_MS + 1,
-        nominal_efficiency_w_ths: 20,
-        hashrate_mhs: { target: 100_000_000, avg: 100_000_000 },
-        power_w: 1500
-      }
-    }
-    t.ok(spec.valid(ctx, base), 'valid when mining > 10 min with a derivable target power')
+    const statsAt = (ts, overrides = {}) => ({
+      status: 'mining',
+      timestamp: ts,
+      nominal_efficiency_w_ths: 20,
+      hashrate_mhs: { target: 100_000_000, avg: 100_000_000 },
+      power_w: 1500,
+      ...overrides
+    })
+
+    const justStarted = { stats: statsAt(t0) }
+    t.not(spec.valid(ctx, justStarted), 'not valid the moment hashrate first appears')
+
+    const stillEarly = { stats: statsAt(t0 + MIN_10_MS - 1) }
+    t.not(spec.valid(ctx, stillEarly), 'not valid before 10 min of mining')
+
+    const base = { stats: statsAt(t0 + MIN_10_MS + 1) }
+    t.ok(spec.valid(ctx, base), 'valid once mining > 10 min with a derivable target power')
     t.ok(spec.probe(ctx, base), 'triggers when power below 80% of target')
 
-    const okPower = { stats: { ...base.stats, power_w: 1800 } }
+    const okPower = { stats: statsAt(t0 + MIN_10_MS + 1, { power_w: 1800 }) }
     t.not(spec.probe(ctx, okPower), 'does not trigger when power above threshold')
 
-    const tooEarly = { stats: { ...base.stats, uptime_ms: MIN_10_MS - 1 } }
-    t.not(spec.valid(ctx, tooEarly), 'not valid before 10 min of mining')
-
-    const noTarget = { stats: { ...base.stats, nominal_efficiency_w_ths: 0 } }
+    const noTarget = { stats: statsAt(t0 + MIN_10_MS + 1, { nominal_efficiency_w_ths: 0 }) }
     t.not(spec.valid(ctx, noTarget), 'not valid without a derivable target power')
 
-    const offline = { stats: { ...base.stats, status: 'offline' } }
+    const offline = { stats: statsAt(t0 + MIN_10_MS + 1, { status: 'offline' }) }
     t.not(spec.valid(ctx, offline), 'not valid when offline')
+
+    const dropped = { stats: statsAt(t0 + MIN_10_MS + 2, { hashrate_mhs: { target: 100_000_000, avg: 0 } }) }
+    t.not(spec.valid(ctx, dropped), 'not valid once hashrate drops back to 0')
+
+    const resumed = { stats: statsAt(t0 + MIN_10_MS + 3) }
+    t.not(spec.valid(ctx, resumed), 'clock restarts after a hashrate dip')
   })
 })
 
@@ -333,24 +344,29 @@ test('alerts - low_hashrate_warning valid and probe', (t) => {
   t.ok(spec, 'should exist')
 
   withMiningMocks(() => {
-    const ctx = { conf: { low_hashrate_warning: { lowHash: 80 } } }
-    const base = {
-      stats: {
-        status: 'mining',
-        uptime_ms: MIN_30_MS + 1,
-        hashrate_mhs: { target: 100_000_000, avg: 70_000_000 }
-      }
-    }
-    t.ok(spec.valid(ctx, base), 'valid when mining > 30 min with a target hashrate')
+    const ctx = { id: 'low-hashrate-warning-test', conf: { low_hashrate_warning: { lowHash: 80 } } }
+    const t0 = Date.now()
+    const statsAt = (ts, overrides = {}) => ({
+      status: 'mining',
+      timestamp: ts,
+      hashrate_mhs: { target: 100_000_000, avg: 70_000_000 },
+      ...overrides
+    })
+
+    const justStarted = { stats: statsAt(t0) }
+    t.not(spec.valid(ctx, justStarted), 'not valid the moment hashrate first appears')
+
+    const stillEarly = { stats: statsAt(t0 + MIN_30_MS - 1) }
+    t.not(spec.valid(ctx, stillEarly), 'not valid before 30 min of mining')
+
+    const base = { stats: statsAt(t0 + MIN_30_MS + 1) }
+    t.ok(spec.valid(ctx, base), 'valid once mining > 30 min with a target hashrate')
     t.ok(spec.probe(ctx, base), 'triggers when hashrate below 80% of target')
 
-    const okHash = { stats: { ...base.stats, hashrate_mhs: { target: 100_000_000, avg: 90_000_000 } } }
+    const okHash = { stats: statsAt(t0 + MIN_30_MS + 1, { hashrate_mhs: { target: 100_000_000, avg: 90_000_000 } }) }
     t.not(spec.probe(ctx, okHash), 'does not trigger when hashrate above threshold')
 
-    const tooEarly = { stats: { ...base.stats, uptime_ms: MIN_30_MS - 1 } }
-    t.not(spec.valid(ctx, tooEarly), 'not valid before 30 min of mining')
-
-    const noTarget = { stats: { ...base.stats, hashrate_mhs: { target: 0, avg: 70_000_000 } } }
+    const noTarget = { stats: statsAt(t0 + MIN_30_MS + 1, { hashrate_mhs: { target: 0, avg: 70_000_000 } }) }
     t.not(spec.valid(ctx, noTarget), 'not valid without a target hashrate')
   })
 })
@@ -360,23 +376,32 @@ test('alerts - high_efficiency_warning valid and probe', (t) => {
   t.ok(spec, 'should exist')
 
   withMiningMocks(() => {
-    const ctx = { conf: { high_efficiency_warning: { highEfficiency: 125 } } }
+    const ctx = { id: 'high-efficiency-warning-test', conf: { high_efficiency_warning: { highEfficiency: 125 } } }
+    const t0 = Date.now()
     // nominal 20 W/THs => threshold 25 W/THs
-    const base = {
-      stats: {
-        status: 'mining',
-        uptime_ms: MIN_30_MS + 1,
-        nominal_efficiency_w_ths: 20,
-        efficiency_w_ths: 30
-      }
-    }
-    t.ok(spec.valid(ctx, base), 'valid when mining > 30 min with a nominal efficiency')
+    const statsAt = (ts, overrides = {}) => ({
+      status: 'mining',
+      timestamp: ts,
+      nominal_efficiency_w_ths: 20,
+      efficiency_w_ths: 30,
+      hashrate_mhs: { target: 100_000_000, avg: 100_000_000 },
+      ...overrides
+    })
+
+    const justStarted = { stats: statsAt(t0) }
+    t.not(spec.valid(ctx, justStarted), 'not valid the moment hashrate first appears')
+
+    const stillEarly = { stats: statsAt(t0 + MIN_30_MS - 1) }
+    t.not(spec.valid(ctx, stillEarly), 'not valid before 30 min of mining')
+
+    const base = { stats: statsAt(t0 + MIN_30_MS + 1) }
+    t.ok(spec.valid(ctx, base), 'valid once mining > 30 min with a nominal efficiency')
     t.ok(spec.probe(ctx, base), 'triggers when efficiency above 125% of nominal')
 
-    const okEff = { stats: { ...base.stats, efficiency_w_ths: 22 } }
+    const okEff = { stats: statsAt(t0 + MIN_30_MS + 1, { efficiency_w_ths: 22 }) }
     t.not(spec.probe(ctx, okEff), 'does not trigger when efficiency within range')
 
-    const noNominal = { stats: { ...base.stats, nominal_efficiency_w_ths: 0 } }
+    const noNominal = { stats: statsAt(t0 + MIN_30_MS + 1, { nominal_efficiency_w_ths: 0 }) }
     t.not(spec.valid(ctx, noNominal), 'not valid without a nominal efficiency')
   })
 })
@@ -574,36 +599,41 @@ for (const key of ['custom.low_power.warning', 'custom.low_power.critical']) {
     const spec = alerts.specs.miner[key]
 
     withMiningMocks(() => {
-      const ctx = { configuredParams: { [key]: { enabled: true, lowPower: 80 } } }
+      const ctx = { id: key, configuredParams: { [key]: { enabled: true, lowPower: 80 } } }
+      const t0 = Date.now()
       // nominal 20 W/THs * 100 THs (100,000,000 MHS) target => 2000 W target, threshold 1600 W
-      const base = {
-        stats: {
-          status: 'mining',
-          uptime_ms: MIN_10_MS + 1,
-          nominal_efficiency_w_ths: 20,
-          hashrate_mhs: { target: 100_000_000, avg: 100_000_000 },
-          power_w: 1500
-        }
-      }
+      const statsAt = (ts, overrides = {}) => ({
+        status: 'mining',
+        timestamp: ts,
+        nominal_efficiency_w_ths: 20,
+        hashrate_mhs: { target: 100_000_000, avg: 100_000_000 },
+        power_w: 1500,
+        ...overrides
+      })
+
+      const justStarted = { stats: statsAt(t0) }
+      t.not(spec.valid(ctx, justStarted), 'not valid the moment hashrate first appears')
+
+      const stillEarly = { stats: statsAt(t0 + MIN_10_MS - 1) }
+      t.not(spec.valid(ctx, stillEarly), 'not valid before 10 min of mining')
+
+      const base = { stats: statsAt(t0 + MIN_10_MS + 1) }
       t.ok(spec.valid(ctx, base), 'valid when enabled, mining > 10 min with a derivable target power')
       t.ok(spec.probe(ctx, base), 'triggers when power below 80% of target')
 
-      const okPower = { stats: { ...base.stats, power_w: 1800 } }
+      const okPower = { stats: statsAt(t0 + MIN_10_MS + 1, { power_w: 1800 }) }
       t.not(spec.probe(ctx, okPower), 'does not trigger when power above threshold')
 
-      const disabled = { configuredParams: { [key]: { enabled: false, lowPower: 80 } } }
+      const disabled = { id: key, configuredParams: { [key]: { enabled: false, lowPower: 80 } } }
       t.not(spec.valid(disabled, base), 'not valid when disabled')
 
-      const noConfiguredParams = { configuredParams: {} }
+      const noConfiguredParams = { id: key, configuredParams: {} }
       t.not(spec.valid(noConfiguredParams, base), 'not valid when configuredParams is missing')
 
-      const tooEarly = { stats: { ...base.stats, uptime_ms: MIN_10_MS - 1 } }
-      t.not(spec.valid(ctx, tooEarly), 'not valid before 10 min of mining')
-
-      const noTarget = { stats: { ...base.stats, nominal_efficiency_w_ths: 0 } }
+      const noTarget = { stats: statsAt(t0 + MIN_10_MS + 1, { nominal_efficiency_w_ths: 0 }) }
       t.not(spec.valid(ctx, noTarget), 'not valid without a derivable target power')
 
-      const offline = { stats: { ...base.stats, status: 'offline' } }
+      const offline = { stats: statsAt(t0 + MIN_10_MS + 1, { status: 'offline' }) }
       t.not(spec.valid(ctx, offline), 'not valid when offline')
     })
   })
@@ -621,32 +651,38 @@ for (const key of ['custom.high_efficiency.warning', 'custom.high_efficiency.cri
     const spec = alerts.specs.miner[key]
 
     withMiningMocks(() => {
-      const ctx = { configuredParams: { [key]: { enabled: true, highEfficiency: 125 } } }
+      const ctx = { id: key, configuredParams: { [key]: { enabled: true, highEfficiency: 125 } } }
+      const t0 = Date.now()
       // nominal 20 W/THs => threshold 25 W/THs
-      const base = {
-        stats: {
-          status: 'mining',
-          uptime_ms: MIN_30_MS + 1,
-          nominal_efficiency_w_ths: 20,
-          efficiency_w_ths: 30
-        }
-      }
+      const statsAt = (ts, overrides = {}) => ({
+        status: 'mining',
+        timestamp: ts,
+        nominal_efficiency_w_ths: 20,
+        efficiency_w_ths: 30,
+        hashrate_mhs: { target: 100_000_000, avg: 100_000_000 },
+        ...overrides
+      })
+
+      const justStarted = { stats: statsAt(t0) }
+      t.not(spec.valid(ctx, justStarted), 'not valid the moment hashrate first appears')
+
+      const stillEarly = { stats: statsAt(t0 + MIN_30_MS - 1) }
+      t.not(spec.valid(ctx, stillEarly), 'not valid before 30 min of mining')
+
+      const base = { stats: statsAt(t0 + MIN_30_MS + 1) }
       t.ok(spec.valid(ctx, base), 'valid when enabled, mining > 30 min with a nominal efficiency')
       t.ok(spec.probe(ctx, base), 'triggers when efficiency above 125% of nominal')
 
-      const okEff = { stats: { ...base.stats, efficiency_w_ths: 22 } }
+      const okEff = { stats: statsAt(t0 + MIN_30_MS + 1, { efficiency_w_ths: 22 }) }
       t.not(spec.probe(ctx, okEff), 'does not trigger when efficiency within range')
 
-      const disabled = { configuredParams: { [key]: { enabled: false, highEfficiency: 125 } } }
+      const disabled = { id: key, configuredParams: { [key]: { enabled: false, highEfficiency: 125 } } }
       t.not(spec.valid(disabled, base), 'not valid when disabled')
 
-      const noConfiguredParams = { configuredParams: {} }
+      const noConfiguredParams = { id: key, configuredParams: {} }
       t.not(spec.valid(noConfiguredParams, base), 'not valid when configuredParams is missing')
 
-      const tooEarly = { stats: { ...base.stats, uptime_ms: MIN_30_MS - 1 } }
-      t.not(spec.valid(ctx, tooEarly), 'not valid before 30 min of mining')
-
-      const noNominal = { stats: { ...base.stats, nominal_efficiency_w_ths: 0 } }
+      const noNominal = { stats: statsAt(t0 + MIN_30_MS + 1, { nominal_efficiency_w_ths: 0 }) }
       t.not(spec.valid(ctx, noNominal), 'not valid without a nominal efficiency')
     })
   })
