@@ -1,10 +1,13 @@
 'use strict'
 
-const { proxyState } = require('../utils')
+const { proxyState, createSuccessResponse, getHashrate } = require('../utils')
 
 module.exports = proxyState(function (ctx, state) {
-  // miner does not respond
   state.elapsed = +new Date()
   state.uptime = +new Date()
-  return null
+  state.suspended = false
+  Object.assign(state.summary, getHashrate(), {
+    Power: state.summary['Power Limit'] || 8000
+  })
+  return createSuccessResponse()
 })

@@ -6,6 +6,8 @@ module.exports = proxyState(function (ctx, state) {
   state.summary['Power Mode'] = 'Normal'
   state.summary['Power Limit'] = 7700
   state.summary['Target Freq'] = 720
-  state.summary['MHS av'] = 8345093
+  if (!state.suspended) {
+    state.summary['MHS av'] = 8345093
+  }
   return null
 })

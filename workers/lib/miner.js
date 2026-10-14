@@ -833,14 +833,16 @@ class WhatsminerMiner extends BaseMiner {
   async setPowerMode (mode) {
     if (['low', 'normal', 'high'].indexOf(mode) > -1) {
       try {
-        if (isResOK(await this._requestWriteEndpoint('power_on'))) {
-          // no resp, will timeout
-          this._requestWriteEndpoint(`set_${mode}_power`).catch(e => this.debugError('set_powermode_err', e))
+        if (!isResOK(await this._requestWriteEndpoint('power_on'))) {
+          return { success: false, error_msg: 'ERR_POWER_ON_FAILED' }
         }
+        // no resp, will timeout
+        this._requestWriteEndpoint(`set_${mode}_power`).catch(e => this.debugError('set_powermode_err', e))
+        return { success: true }
       } catch (e) {
         this.debugError('set_powermode_err', e)
+        return { success: false, error_msg: e.message }
       }
-      return { success: true }
     } else if (mode === POWER_MODE.SLEEP) {
       return this.suspendMining()
     } else {

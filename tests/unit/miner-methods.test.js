@@ -173,6 +173,24 @@ test('miner: setPowerMode low/normal/high powers on then sets mode', async (t) =
   t.is(calls[1].cmd, 'set_high_power')
 })
 
+test('miner: setPowerMode fails when power_on fails', async (t) => {
+  const throwing = buildMiner()
+  withWrite(throwing, (cmd) => {
+    if (cmd === 'power_on') throw new Error('boom')
+    return OK
+  })
+  const res = await throwing.setPowerMode('normal')
+  t.is(res.success, false)
+  t.is(res.error_msg, 'boom')
+
+  const notOk = buildMiner()
+  const calls = withWrite(notOk, { Code: 14 })
+  const res2 = await notOk.setPowerMode('normal')
+  t.is(res2.success, false)
+  t.is(res2.error_msg, 'ERR_POWER_ON_FAILED')
+  t.is(calls.length, 1, 'set_normal_power is not sent when power_on fails')
+})
+
 test('miner: setPowerMode sleep suspends', async (t) => {
   const m = buildMiner()
   const calls = withWrite(m, OK)

@@ -295,7 +295,9 @@ test('miner: write helpers return the error message when the call fails', async 
     if (cmd === 'power_on') throw new Error('power')
     return OK
   }
-  t.is((await mode.setPowerMode('low')).success, true)
+  const modeRes = await mode.setPowerMode('low')
+  t.is(modeRes.success, false)
+  t.is(modeRes.error_msg, 'power')
 
   const led = buildMiner()
   led._requestWriteEndpoint = fail
